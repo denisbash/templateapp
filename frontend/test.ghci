@@ -1,0 +1,4 @@
+:set prompt "> "
+:set -isrc
+:set -w
+:load Main
