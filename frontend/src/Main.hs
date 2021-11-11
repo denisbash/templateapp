@@ -42,13 +42,16 @@ templateWidget' i dynTemplate = divClass "d-flex border-bottom" $ do
                           divClass "p-2 flex-grow-1 my-auto" $ 
                             dynText $ templateText <$> dynTemplate
                           divClass "p-2 my-auto" $ display $ templateStatus <$> dynTemplate
-                          divClass "p-2 my-auto" $ showNamedTemplates namedTemplates
+                          dropEv <- divClass "p-2 my-auto" $ showNamedTemplates namedTemplates
+                          let dropEndoEv = Endo <$> (mapTemplateWithKey i <$> (const <$> dropEv))
                           divClass "p-2 btn-group"$ do 
                             let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
                             (btnEl,_) <- elAttr' "button" btnAttr $ text "Fix Status"
-                            let btnEv = domEvent Click btnEl
+                            let 
+                              btnEv = domEvent Click btnEl
+                              btnEndoEv = const (Endo $ mapTemplateWithKey i setStatusToDone) <$> btnEv
                             (btnEl2,_) <- elAttr' "button" btnAttr $ text "Empty"
-                            return $ const (Endo $ mapTemplateWithKey i setStatusToDone) <$> btnEv 
+                            return $ leftmost [btnEndoEv, dropEndoEv] 
 
 
 templateListWidget' :: MonadWidget t m => Dynamic t Templates -> m(Event t (Endo Templates))
@@ -81,17 +84,19 @@ rootWidget' = divClass "container" $ do
           editsEv <- templateListWidget' templatesDyn 
         blank
 
-namedTemplatesWidget :: MonadWidget t m => M.Map Template T.Text -> m ()
+namedTemplatesWidget :: MonadWidget t m => M.Map Template T.Text -> m (Event t Template)
 namedTemplatesWidget ntemplates = do 
     d <- dropdown (Template "---select---" Done) (constDyn ntemplates) def
-    display $ _dropdown_value d
+    return $ _dropdown_change d
+    
 
-showNamedTemplates :: MonadWidget t m => M.Map Template T.Text-> m ()
-showNamedTemplates ntemplates = do
-    cBox <- inputElement $ def
+showNamedTemplates :: MonadWidget t m => M.Map Template T.Text-> m (Event t Template)
+showNamedTemplates ntemplates = el "form" $ do
+    cBox <- divClass "col-3" $ inputElement $ def
         & inputElementConfig_initialChecked .~ False
         & inputElementConfig_elementConfig . elementConfig_initialAttributes .~ ("type" =: "checkbox")
     let dV = _inputElement_checked cBox
-    delimiter
-    dyn_ $ (\b -> if b then namedTemplatesWidget ntemplates else blank) <$> dV
-    
+    divClass "col-3" $ do
+      evEv <- dyn $ (\b -> if b then namedTemplatesWidget ntemplates else return never) <$> dV
+      switchHold never evEv
+      
