@@ -47,17 +47,27 @@ templateWidget' i dynTemplate = divClass "d-flex border-bottom" $ do
                           divClass "p-2 btn-group"$ do 
                             let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
                             (btnEl,_) <- elAttr' "button" btnAttr $ text "Fix Status"
+                            (btnEl2,_) <- elAttr' "button" btnAttr $ text "Remove"
                             let 
                               btnEv = domEvent Click btnEl
+                              btnEv2 = domEvent Click btnEl2
                               btnEndoEv = const (Endo $ mapTemplateWithKey i setStatusToDone) <$> btnEv
-                            (btnEl2,_) <- elAttr' "button" btnAttr $ text "Empty"
-                            return $ leftmost [btnEndoEv, dropEndoEv] 
+                              btnEndoEv2 = const (Endo $ IM.filterWithKey (\k _ -> k /= i)) <$> btnEv2
+                            return $ leftmost [btnEndoEv, btnEndoEv2, dropEndoEv] 
 
 
 templateListWidget' :: MonadWidget t m => Dynamic t Templates -> m(Event t (Endo Templates))
 templateListWidget' templatesDyn = rowWrapper $ do 
         x <- listWithKey (M.fromAscList . IM.toAscList <$> templatesDyn) templateWidget'
-        return $ switchDyn (leftmost . M.elems <$> x)
+        divClass "p-2 btn-group"$ do 
+          let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
+          (btnEl,_) <- elAttr' "button" btnAttr $ text "Clear all"
+          let 
+            btnEv = domEvent Click btnEl
+            btnEndoEv = const (Endo $ const mempty) <$> btnEv
+          (btnEl2,_) <- elAttr' "button" btnAttr $ text "Save all"
+          let allEv = btnEndoEv --leftmost [btnEndoEv, dropEndoEv] 
+          return $ leftmost [allEv,  switchDyn (leftmost . M.elems <$> x)]
         
 
 newTemplateForm' :: MonadWidget t m => m (Event t (Endo Templates))
@@ -82,6 +92,12 @@ rootWidget' = divClass "container" $ do
           let templatesDyn = (flip appEndo) mempty <$> templateDyn --Dynamic t (IM.IntMap Template)
           delimiter
           editsEv <- templateListWidget' templatesDyn 
+          delimiter
+          divClass "p-2 btn-group"$ do 
+            let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
+            (btnEl,_) <- elAttr' "button" btnAttr $ text "Save all"
+            savedTemplates <- foldDyn (:) [] $ tag (current (IM.elems <$> templatesDyn)) $ domEvent Click btnEl
+            display $ savedTemplates
         blank
 
 namedTemplatesWidget :: MonadWidget t m => M.Map Template T.Text -> m (Event t Template)
