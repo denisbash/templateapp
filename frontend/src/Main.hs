@@ -37,26 +37,26 @@ delimiter :: MonadWidget t m => m ()
 delimiter = rowWrapper $
                 divClass "border-top mt-3" blank
 
-templateWidget' :: MonadWidget t m => Dynamic t (M.Map Template T.Text) -> Int -> Dynamic t Template -> m (Event t (Endo Templates))
+templateWidget' :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> Int -> Dynamic t Template -> m (Event t (Endo Templates))
 templateWidget' namedTemplatesDyn  i dynTemplate = divClass "d-flex border-bottom" $ do
                           divClass "p-2 flex-grow-1 my-auto" $ 
                             dynText $ templateText <$> dynTemplate
-                          divClass "p-2 my-auto" $ display $ templateStatus <$> dynTemplate
+                          divClass "p-2 my-auto" $ display $ templateType <$> dynTemplate
                           dropEv <- divClass "p-2 my-auto" $ showNamedTemplates namedTemplatesDyn
-                          let dropEndoEv = Endo <$> (mapTemplateWithKey i <$> (const <$> dropEv))
+                          let dropEndoEv = Endo <$> (mapTemplateWithKey i <$> (const . template <$> dropEv))
                           divClass "p-2 btn-group"$ do 
                             let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
-                            (btnEl,_) <- elAttr' "button" btnAttr $ text "Fix Status"
+                            (btnEl,_) <- elAttr' "button" btnAttr $ text "Reset"
                             (btnEl2,_) <- elAttr' "button" btnAttr $ text "Remove"
                             let 
                               btnEv = domEvent Click btnEl
                               btnEv2 = domEvent Click btnEl2
-                              btnEndoEv = const (Endo $ mapTemplateWithKey i setStatusToDone) <$> btnEv
+                              btnEndoEv = const (Endo $ mapTemplateWithKey i resetTemplate) <$> btnEv
                               btnEndoEv2 = const (Endo $ IM.filterWithKey (\k _ -> k /= i)) <$> btnEv2
                             return $ leftmost [btnEndoEv, btnEndoEv2, dropEndoEv] 
 
 
-templateListWidget' :: MonadWidget t m => Dynamic t (M.Map Template T.Text) -> Dynamic t Templates -> m(Event t (Endo Templates))
+templateListWidget' :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> Dynamic t Templates -> m(Event t (Endo Templates))
 templateListWidget' dbTemplatesDyn templatesDyn = rowWrapper $ do 
         x <- listWithKey (M.fromAscList . IM.toAscList <$> templatesDyn) $ templateWidget' dbTemplatesDyn
         divClass "p-2 btn-group"$ do 
@@ -92,21 +92,38 @@ rootWidget' = divClass "container" $ do
           delimiter
           editsEv <- templateListWidget' dbTemplatesDyn templatesDyn 
           delimiter
+          rowWrapper $ el "form" $
+            divClass "input-group" $ mdo
+              iEl <- inputElement $ def & initialAttributes .~ ("type" =: "text" <> "class" =: "form-control" <> "placeholder" =: "Template Name") 
+                & inputElementConfig_setValue .~ (respTextEv)
+              let 
+                namedTemplateDyn = (NamedTemplate <$> value iEl) <*> (constDyn Editable) <*> (L . IM.elems <$> templatesDyn)
+                namedTemplatesDyn = (flip (:)) [] <$> namedTemplateDyn
+                btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
+              (btnEl,_) <- divClass "input-group-append" $ elAttr' "button" btnAttr $ text "Save Template"
+              let btnEv = domEvent Click btnEl
+              let reqFunc = postJson  url 
+              respEv <- performRequestAsync $ reqFunc <$> (tag (current namedTemplatesDyn) $ btnEv)
+              let respTextEv = view . _xhrResponse_responseText <$> respEv
+              --asText <- holdDyn "No result" respTextEv
+              --dynText asText
+              blank
+          delimiter
           dbTemplatesDyn <- divClass "p-2 btn-group"$ do 
             let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
-            (btnEl,_) <- elAttr' "button" btnAttr $ text "Save all"
+            --(btnEl,_) <- elAttr' "button" btnAttr $ text "Save all"
             --savedTemplates <- foldDyn (:) [] $ tag (current (IM.elems <$> templatesDyn)) $ domEvent Click btnEl
             (btnEl2,_) <- elAttr' "button" btnAttr $ text "LoadDB"
             --display $ savedTemplates
-            let reqFunc = postJson  url 
-            respEv <- performRequestAsync $ reqFunc <$> (tag (current (IM.elems <$> templatesDyn)) $ domEvent Click btnEl)
-            let respTextEv = view . _xhrResponse_responseText <$> respEv
-            asText <- holdDyn "No result" respTextEv
-            dynText asText
+            --let reqFunc = postJson  url 
+            --respEv <- performRequestAsync $ reqFunc <$> (tag (current (IM.elems <$> templatesDyn)) $ domEvent Click btnEl)
+            --let respTextEv = view . _xhrResponse_responseText <$> respEv
+            --asText <- holdDyn "No result" respTextEv
+            --dynText asText
             mEv <- getAndDecode (const url <$> domEvent Click btnEl2)
             let 
               mListEv = (maybe [] id) <$> mEv
-              ascListEv = map (\t -> (t, templateText t)) <$> mListEv
+              ascListEv = map (\t -> (t, templateName t)) <$> mListEv
               mapEv = M.fromAscList <$> ascListEv
             holdDyn mempty mapEv 
                 
@@ -129,13 +146,13 @@ view mText = maybe "FAILED" id mText
 --    respEv <- performRequestAsync evVal
 --    return $ view . _xhrResponse_responseText <$> respEv
 
-namedTemplatesWidget :: MonadWidget t m => Dynamic t (M.Map Template T.Text) -> m (Event t Template)
+namedTemplatesWidget :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> m (Event t NamedTemplate)
 namedTemplatesWidget ntemplatesDyn = do 
-    d <- dropdown (Template "---select---" Done) ntemplatesDyn def
+    d <- dropdown (NamedTemplate "---select---" Done (V "")) ntemplatesDyn def
     return $ _dropdown_change d
     
 
-showNamedTemplates :: MonadWidget t m => Dynamic t (M.Map Template T.Text)-> m (Event t Template)
+showNamedTemplates :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text)-> m (Event t NamedTemplate)
 showNamedTemplates ntemplatesDyn = el "form" $ do
     cBox <- divClass "col-3" $ inputElement $ def
         & inputElementConfig_initialChecked .~ False
