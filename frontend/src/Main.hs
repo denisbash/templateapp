@@ -27,7 +27,7 @@ headWidget = do
     <> "integrity" =: "sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh"
     <> "crossorigin" =: "anonymous")
     blank
-  el "title" $ text "TODO App"
+  el "title" $ text "Template App"
 
 rowWrapper :: MonadWidget t m => m a -> m a
 rowWrapper x = divClass "row justify-content-md-center" $
@@ -37,12 +37,12 @@ delimiter :: MonadWidget t m => m ()
 delimiter = rowWrapper $
                 divClass "border-top mt-3" blank
 
-templateWidget' :: MonadWidget t m => Int -> Dynamic t Template -> m (Event t (Endo Templates))
-templateWidget' i dynTemplate = divClass "d-flex border-bottom" $ do
+templateWidget' :: MonadWidget t m => Dynamic t (M.Map Template T.Text) -> Int -> Dynamic t Template -> m (Event t (Endo Templates))
+templateWidget' namedTemplatesDyn  i dynTemplate = divClass "d-flex border-bottom" $ do
                           divClass "p-2 flex-grow-1 my-auto" $ 
                             dynText $ templateText <$> dynTemplate
                           divClass "p-2 my-auto" $ display $ templateStatus <$> dynTemplate
-                          dropEv <- divClass "p-2 my-auto" $ showNamedTemplates namedTemplates
+                          dropEv <- divClass "p-2 my-auto" $ showNamedTemplates namedTemplatesDyn
                           let dropEndoEv = Endo <$> (mapTemplateWithKey i <$> (const <$> dropEv))
                           divClass "p-2 btn-group"$ do 
                             let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
@@ -56,9 +56,9 @@ templateWidget' i dynTemplate = divClass "d-flex border-bottom" $ do
                             return $ leftmost [btnEndoEv, btnEndoEv2, dropEndoEv] 
 
 
-templateListWidget' :: MonadWidget t m => Dynamic t Templates -> m(Event t (Endo Templates))
-templateListWidget' templatesDyn = rowWrapper $ do 
-        x <- listWithKey (M.fromAscList . IM.toAscList <$> templatesDyn) templateWidget'
+templateListWidget' :: MonadWidget t m => Dynamic t (M.Map Template T.Text) -> Dynamic t Templates -> m(Event t (Endo Templates))
+templateListWidget' dbTemplatesDyn templatesDyn = rowWrapper $ do 
+        x <- listWithKey (M.fromAscList . IM.toAscList <$> templatesDyn) $ templateWidget' dbTemplatesDyn
         divClass "p-2 btn-group"$ do 
           let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
           (btnEl,_) <- elAttr' "button" btnAttr $ text "Clear all"
@@ -82,7 +82,6 @@ newTemplateForm' = rowWrapper $ el "form" $
                   let btnEv = domEvent Click btnEl
                   return $ (\template -> Endo $ addTemplate template) <$> (tagPromptlyDyn newTemplateDyn $ btnEv)
 
-
 rootWidget' :: MonadWidget t m => m ()
 rootWidget' = divClass "container" $ do
         elClass "h2" "text-center mt-2" $ text "Templates"
@@ -91,28 +90,58 @@ rootWidget' = divClass "container" $ do
           templateDyn <- foldDyn (<>) mempty $ leftmost [newTemplateEv, editsEv]
           let templatesDyn = (flip appEndo) mempty <$> templateDyn --Dynamic t (IM.IntMap Template)
           delimiter
-          editsEv <- templateListWidget' templatesDyn 
+          editsEv <- templateListWidget' dbTemplatesDyn templatesDyn 
           delimiter
-          divClass "p-2 btn-group"$ do 
+          dbTemplatesDyn <- divClass "p-2 btn-group"$ do 
             let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
             (btnEl,_) <- elAttr' "button" btnAttr $ text "Save all"
-            savedTemplates <- foldDyn (:) [] $ tag (current (IM.elems <$> templatesDyn)) $ domEvent Click btnEl
-            display $ savedTemplates
+            --savedTemplates <- foldDyn (:) [] $ tag (current (IM.elems <$> templatesDyn)) $ domEvent Click btnEl
+            (btnEl2,_) <- elAttr' "button" btnAttr $ text "LoadDB"
+            --display $ savedTemplates
+            let reqFunc = postJson  url 
+            respEv <- performRequestAsync $ reqFunc <$> (tag (current (IM.elems <$> templatesDyn)) $ domEvent Click btnEl)
+            let respTextEv = view . _xhrResponse_responseText <$> respEv
+            asText <- holdDyn "No result" respTextEv
+            dynText asText
+            mEv <- getAndDecode (const url <$> domEvent Click btnEl2)
+            let 
+              mListEv = (maybe [] id) <$> mEv
+              ascListEv = map (\t -> (t, templateText t)) <$> mListEv
+              mapEv = M.fromAscList <$> ascListEv
+            holdDyn mempty mapEv 
+                
         blank
 
-namedTemplatesWidget :: MonadWidget t m => M.Map Template T.Text -> m (Event t Template)
-namedTemplatesWidget ntemplates = do 
-    d <- dropdown (Template "---select---" Done) (constDyn ntemplates) def
+--handleRequest :: Event t a -> m Event t Text
+url = "http://localhost:8081/templates" :: T.Text
+
+view :: Maybe T.Text -> T.Text
+view mText = maybe "FAILED" id mText
+
+--getFromDB urlEv = do
+--    mEv <- getAndDecode urlEv 
+--    let 
+--      mListEv = (maybe [] id) <$> mEv
+--      ascListEv = map (\t -> (t, templateText t)) <$> mListEv
+--      mapEv = M.fromAscList <$> ascListEv
+--    holdDyn mempty mapEv 
+--handleRequest evVal = do
+--    respEv <- performRequestAsync evVal
+--    return $ view . _xhrResponse_responseText <$> respEv
+
+namedTemplatesWidget :: MonadWidget t m => Dynamic t (M.Map Template T.Text) -> m (Event t Template)
+namedTemplatesWidget ntemplatesDyn = do 
+    d <- dropdown (Template "---select---" Done) ntemplatesDyn def
     return $ _dropdown_change d
     
 
-showNamedTemplates :: MonadWidget t m => M.Map Template T.Text-> m (Event t Template)
-showNamedTemplates ntemplates = el "form" $ do
+showNamedTemplates :: MonadWidget t m => Dynamic t (M.Map Template T.Text)-> m (Event t Template)
+showNamedTemplates ntemplatesDyn = el "form" $ do
     cBox <- divClass "col-3" $ inputElement $ def
         & inputElementConfig_initialChecked .~ False
         & inputElementConfig_elementConfig . elementConfig_initialAttributes .~ ("type" =: "checkbox")
     let dV = _inputElement_checked cBox
     divClass "col-3" $ do
-      evEv <- dyn $ (\b -> if b then namedTemplatesWidget ntemplates else return never) <$> dV
+      evEv <- dyn $ (\b -> if b then namedTemplatesWidget ntemplatesDyn else return never) <$> dV
       switchHold never evEv
       

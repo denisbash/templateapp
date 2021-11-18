@@ -1,5 +1,6 @@
 {-# LANGUAGE RecordWildCards  #-}
 {-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE DeriveGeneric #-}
 module Common (
    Template(..),
    Templates(..),
@@ -14,10 +15,17 @@ module Common (
 import Data.Text (Text)
 import qualified Data.IntMap as IM
 import qualified Data.Map as M
+import GHC.Generics (Generic)
+import Data.Aeson.Types (ToJSON, FromJSON)
 
-data Status = Editable | Done deriving (Show, Eq)
+data Status = Editable | Done deriving (Show, Eq, Generic)
 
-data Template = Template{templateText :: Text, templateStatus :: Status} deriving (Show, Eq)
+data Template = Template{templateText :: Text, templateStatus :: Status} deriving (Show, Eq, Generic)
+
+instance ToJSON Status
+instance ToJSON Template
+instance FromJSON Status
+instance FromJSON Template
 
 instance Ord Template where
     compare (Template t1 _ ) (Template t2 _) = compare t1 t2
