@@ -87,12 +87,12 @@ rootWidget' = divClass "container" $ do
         elClass "h2" "text-center mt-2" $ text "Templates"
         newTemplateEv <- newTemplateForm'
         rec 
-          templateDyn <- foldDyn (<>) mempty $ leftmost [newTemplateEv, editsEv]
+          templateDyn <- foldDyn (<>) mempty $ leftmost [newTemplateEv, editsEv, totTemEv]
           let templatesDyn = (flip appEndo) mempty <$> templateDyn --Dynamic t (IM.IntMap Template)
           delimiter
           editsEv <- templateListWidget' dbTemplatesDyn templatesDyn 
           delimiter
-          rowWrapper $ el "form" $
+          totTemEv <- rowWrapper $ el "form" $
             divClass "input-group" $ mdo
               iEl <- inputElement $ def & initialAttributes .~ ("type" =: "text" <> "class" =: "form-control" <> "placeholder" =: "Template Name") 
                 & inputElementConfig_setValue .~ (respTextEv)
@@ -107,19 +107,15 @@ rootWidget' = divClass "container" $ do
               let respTextEv = view . _xhrResponse_responseText <$> respEv
               --asText <- holdDyn "No result" respTextEv
               --dynText asText
-              blank
+              (btnEl',_) <- divClass "input-group-appen" $ elAttr' "button" btnAttr $ text "Clear all"
+              let 
+                btnEv' = domEvent Click btnEl'
+                btnEndoEv = const (Endo $ const mempty) <$> btnEv'
+              return btnEndoEv 
           delimiter
           dbTemplatesDyn <- divClass "p-2 btn-group"$ do 
             let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
-            --(btnEl,_) <- elAttr' "button" btnAttr $ text "Save all"
-            --savedTemplates <- foldDyn (:) [] $ tag (current (IM.elems <$> templatesDyn)) $ domEvent Click btnEl
             (btnEl2,_) <- elAttr' "button" btnAttr $ text "LoadDB"
-            --display $ savedTemplates
-            --let reqFunc = postJson  url 
-            --respEv <- performRequestAsync $ reqFunc <$> (tag (current (IM.elems <$> templatesDyn)) $ domEvent Click btnEl)
-            --let respTextEv = view . _xhrResponse_responseText <$> respEv
-            --asText <- holdDyn "No result" respTextEv
-            --dynText asText
             mEv <- getAndDecode (const url <$> domEvent Click btnEl2)
             let 
               mListEv = (maybe [] id) <$> mEv
