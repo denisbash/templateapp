@@ -12,7 +12,7 @@ import Control.Monad (void)
 import Common 
 
 main :: IO ()
-main = mainWidgetWithHead headWidget rootWidget'
+main = mainWidgetWithHead headWidget (showTemplate templateToShowTest)--rootWidget'
 
 headWidget :: MonadWidget t m => m ()
 headWidget = do
@@ -158,3 +158,16 @@ showNamedTemplates ntemplatesDyn = el "form" $ do
       evEv <- dyn $ (\b -> if b then namedTemplatesWidget ntemplatesDyn else return never) <$> dV
       switchHold never evEv
       
+showTemplate :: MonadWidget t m => Template -> m ()
+showTemplate (V s) = (dynText $ constDyn $ T.pack s) >> delimiter
+showTemplate (L ts) = do
+    cBox <- divClass "col-3" $ inputElement $ def
+        & inputElementConfig_initialChecked .~ False
+        & inputElementConfig_elementConfig . elementConfig_initialAttributes .~ ("type" =: "checkbox")
+    let dV = _inputElement_checked cBox
+    divClass "col-3" $ do
+      dyn $ (\b -> if b then foldl (>>) (return ()) (map showTemplate ts)  else return () ) <$> dV
+      blank
+
+templateToShowTest :: Template
+templateToShowTest = L [V "testItem1", L [V "embeddedItem1", V "embeddedItem2", L [V "doublyEmbeddedItem"]], V "testItem3"]
