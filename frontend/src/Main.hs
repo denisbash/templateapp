@@ -1,18 +1,22 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE TemplateHaskell#-}
 module Main where
 
 import Reflex.Dom
 import qualified Data.Text as T 
 import qualified Data.IntMap as IM
 import qualified Data.Map as M
+import Data.FileEmbed
 import Data.Monoid (Endo(..), appEndo)
 import Control.Monad (void)
 import Common 
 
 main :: IO ()
-main = mainWidgetWithHead headWidget (showTemplate templateToShowTest)--rootWidget'
+main = mainWidgetWithHead headWidget rootWidget
+--main = mainWidgetWithCss css rootWidget where
+--  css = $(embedFile "css/tab.css") 
 
 headWidget :: MonadWidget t m => m ()
 headWidget = do
@@ -82,8 +86,8 @@ newTemplateForm' = rowWrapper $ el "form" $
                   let btnEv = domEvent Click btnEl
                   return $ (\template -> Endo $ addTemplate template) <$> (tagPromptlyDyn newTemplateDyn $ btnEv)
 
-rootWidget' :: MonadWidget t m => m ()
-rootWidget' = divClass "container" $ do
+rootWidget' :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> m ()
+rootWidget' dbTemplatesDyn = divClass "container" $ do
         elClass "h2" "text-center mt-2" $ text "Templates"
         newTemplateEv <- newTemplateForm'
         rec 
@@ -113,15 +117,15 @@ rootWidget' = divClass "container" $ do
                 btnEndoEv = const (Endo $ const mempty) <$> btnEv'
               return btnEndoEv 
           delimiter
-          dbTemplatesDyn <- divClass "p-2 btn-group"$ do 
-            let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
-            (btnEl2,_) <- elAttr' "button" btnAttr $ text "LoadDB"
-            mEv <- getAndDecode (const url <$> domEvent Click btnEl2)
-            let 
-              mListEv = (maybe [] id) <$> mEv
-              ascListEv = map (\t -> (t, templateName t)) <$> mListEv
-              mapEv = M.fromAscList <$> ascListEv
-            holdDyn mempty mapEv 
+--          dbTemplatesDyn <- divClass "p-2 btn-group"$ do 
+--            let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
+--            (btnEl2,_) <- elAttr' "button" btnAttr $ text "LoadDB"
+--            mEv <- getAndDecode (const url <$> domEvent Click btnEl2)
+--            let 
+--              mListEv = (maybe [] id) <$> mEv
+--              ascListEv = map (\t -> (t, templateName t)) <$> mListEv
+--              mapEv = M.fromAscList <$> ascListEv
+--            holdDyn mempty mapEv 
                 
         blank
 
@@ -147,6 +151,10 @@ namedTemplatesWidget ntemplatesDyn = do
     d <- dropdown (NamedTemplate "---select---" Done (V "")) ntemplatesDyn def
     return $ _dropdown_change d
     
+namedTemplatesDropdown :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> m (Dynamic t Template)
+namedTemplatesDropdown ntemplatesDyn = do 
+    d <- dropdown (NamedTemplate "---select---" Done (V "")) ntemplatesDyn def
+    return $ template <$> _dropdown_value d
 
 showNamedTemplates :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text)-> m (Event t NamedTemplate)
 showNamedTemplates ntemplatesDyn = el "form" $ do
@@ -171,3 +179,25 @@ showTemplate (L ts) = do
 
 templateToShowTest :: Template
 templateToShowTest = L [V "testItem1", L [V "embeddedItem1", V "embeddedItem2", L [V "doublyEmbeddedItem"]], V "testItem3"]
+
+rootWidget :: MonadWidget t m => m ()
+rootWidget = do
+  dbTemplatesDyn <- divClass "p-2 btn-group"$ do 
+    let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
+    (btnEl2,_) <- elAttr' "button" btnAttr $ text "LoadDB"
+    mEv <- getAndDecode (const url <$> domEvent Click btnEl2)
+    let 
+      mListEv = (maybe [] id) <$> mEv
+      ascListEv = map (\t -> (t, templateName t)) <$> mListEv
+      mapEv = M.fromAscList <$> ascListEv
+    holdDyn mempty mapEv 
+  tabDisplay "list-group list-group-horizontal-md" "list-group-item" $
+    M.fromAscList [("tab1", ("creation", rootWidget' dbTemplatesDyn)), ("tab2", ("display", showNamedTemplateWidget dbTemplatesDyn))]
+
+showNamedTemplateWidget :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> m ()
+showNamedTemplateWidget dbTemplates = divClass "container" $ do
+  elClass "h2" "text-center mt-2" $ text "NamedTemplate Display"
+  rowWrapper $ do
+    templDyn <- namedTemplatesDropdown dbTemplates
+    delimiter
+    dyn_ $ showTemplate <$> templDyn 
