@@ -21,9 +21,9 @@ import qualified Data.Map as M
 import GHC.Generics (Generic)
 import Data.Aeson.Types (ToJSON, FromJSON)
 
-data Status = Editable | Done deriving (Show, Eq, Generic)
-data Template = V String | L [Template] deriving (Show, Eq, Generic)
-data NamedTemplate = NamedTemplate{templateName :: Text, templateStatus :: Status, template :: Template} deriving (Show, Eq, Generic)
+data Status = Editable | Done deriving (Show, Read,  Eq, Generic)
+data Template = V String | L [Template] deriving (Show, Read, Eq, Generic)
+data NamedTemplate = NamedTemplate{templateName :: Text, templateStatus :: Status, template :: Template} deriving (Show, Read, Eq, Generic)
 
 instance ToJSON Template
 instance FromJSON Template

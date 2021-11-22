@@ -2,21 +2,32 @@
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TemplateHaskell#-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-#LANGUAGE FlexibleContexts#-}
 module Main where
 
-import Reflex.Dom
+import Reflex.Dom 
+import Reflex.Dom.WebSocket
 import qualified Data.Text as T 
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import qualified Data.IntMap as IM
 import qualified Data.Map as M
 import Data.FileEmbed
 import Data.Monoid (Endo(..), appEndo)
 import Control.Monad (void)
 import Common 
+import Data.Aeson (decodeStrict)
+import Data.ByteString (ByteString)
+
+import Language.Javascript.JSaddle.Types
+import Reflex.PerformEvent.Class
 
 main :: IO ()
-main = mainWidgetWithHead headWidget rootWidget
+main = mainWidgetWithHead headWidget rootWidgetWS --rootWidget
 --main = mainWidgetWithCss css rootWidget where
 --  css = $(embedFile "css/tab.css") 
+
+wSURL = "ws://localhost:8081/stream" :: T.Text
 
 headWidget :: MonadWidget t m => m ()
 headWidget = do
@@ -177,9 +188,6 @@ showTemplate (L ts) = do
       dyn $ (\b -> if b then foldl (>>) (return ()) (map showTemplate ts)  else return () ) <$> dV
       blank
 
-templateToShowTest :: Template
-templateToShowTest = L [V "testItem1", L [V "embeddedItem1", V "embeddedItem2", L [V "doublyEmbeddedItem"]], V "testItem3"]
-
 rootWidget :: MonadWidget t m => m ()
 rootWidget = do
   dbTemplatesDyn <- divClass "p-2 btn-group"$ do 
@@ -199,5 +207,28 @@ showNamedTemplateWidget dbTemplates = divClass "container" $ do
   elClass "h2" "text-center mt-2" $ text "NamedTemplate Display"
   rowWrapper $ do
     templDyn <- namedTemplatesDropdown dbTemplates
+    templDyn' <- foldDynMaybe (\nVal oVal -> if nVal == oVal then Nothing else Just nVal) (V "") (updated templDyn)
     delimiter
-    dyn_ $ showTemplate <$> templDyn 
+    dyn_ $ showTemplate <$> templDyn'
+
+
+rootWidgetWS :: MonadWidget t m => m ()
+rootWidgetWS = do
+  ws <- myWebSocket wSURL def
+  let 
+--    mEv = decodeStrict <$> (_webSocket_recv ws) 
+    mEv' = decodeUtf8 <$> (_webSocket_recv ws)
+    toTemps :: T.Text -> [NamedTemplate]
+    toTemps = read . T.unpack    
+    mListEv = toTemps <$> mEv' -- (maybe [] id) <$> mEv
+    ascListEv = map (\t -> (t, templateName t)) <$> mListEv
+    mapEv = M.fromAscList <$> ascListEv
+--  respText <- holdDyn "Nothing yet" mEv'
+--  dynText respText
+  dbTemplatesDyn <- holdDyn M.empty mapEv
+  tabDisplay "list-group list-group-horizontal-md" "list-group-item" $
+    M.fromAscList [("tab1", ("creation", rootWidget' dbTemplatesDyn)), ("tab2", ("display", showNamedTemplateWidget dbTemplatesDyn))]
+
+myWebSocket :: (MonadJSM m, MonadJSM (Performable m), HasJSContext m, PerformEvent t m, TriggerEvent t m, PostBuild t m) => T.Text -> WebSocketConfig t ByteString -> m (WebSocket t)
+myWebSocket = webSocket
+
