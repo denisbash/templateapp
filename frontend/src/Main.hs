@@ -15,6 +15,7 @@ import qualified Data.Map as M
 import Data.FileEmbed
 import Data.Monoid (Endo(..), appEndo)
 import Control.Monad (void)
+import Control.Monad.Fix (MonadFix)
 import Common 
 import Data.Aeson (decodeStrict)
 import Data.ByteString (ByteString)
@@ -46,7 +47,7 @@ headWidget = do
 
 rowWrapper :: MonadWidget t m => m a -> m a
 rowWrapper x = divClass "row justify-content-md-center" $
-                divClass "col-6" x
+                divClass "col-9" x
 
 delimiter :: MonadWidget t m => m ()
 delimiter = rowWrapper $
@@ -70,6 +71,40 @@ templateWidget' namedTemplatesDyn  i dynTemplate = divClass "d-flex border-botto
                               btnEndoEv2 = const (Endo $ IM.filterWithKey (\k _ -> k /= i)) <$> btnEv2
                             return $ leftmost [btnEndoEv, btnEndoEv2, dropEndoEv] 
 
+templateWidget'' :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> Template -> m (Event t (Endo Template))
+templateWidget'' namedTemplatesDyn (V s) = divClass "d-flex border-bottom" $ do
+                          divClass "p-2 flex-grow-1 my-auto" $ do
+                            --dynText $ constDyn $ "1234"
+                            iEl <- inputElement $ def & initialAttributes .~ ("type" =: "text" <> "class" =: "form-control" <> "placeholder" =: (T.pack s))
+                              & inputElementConfig_initialValue .~ (T.pack s)  
+                              -- & inputElementConfig_setValue .~ ("" <$ btnEv)
+                            let newTemplateDyn = newTemplate <$> value iEl
+                            blank
+                          divClass "p-2 my-auto" $ dynText $ constDyn $ "V"
+                          dropEv <- divClass "p-2 my-auto" $ showNamedTemplates namedTemplatesDyn
+                          let dropEndoEv = Endo <$> (const . template <$> dropEv)
+                          divClass "p-2 btn-group"$ do 
+                            let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
+                            (btnEl,_) <- elAttr' "button" btnAttr $ text "Reset"
+                            (btnEl2,_) <- elAttr' "button" btnAttr $ text "Remove"
+                            let 
+                              btnEv = domEvent Click btnEl
+                              btnEv2 = domEvent Click btnEl2
+                              btnEndoEv = const (Endo $ resetTemplate) <$> btnEv
+                              btnEndoEv2 = const (Endo $ id) <$> btnEv2
+                            return $ leftmost [btnEndoEv, btnEndoEv2, dropEndoEv]
+
+templateWidget'' namedTemplates (L ts) = rowWrapper $ do 
+        x <- mapM (templateWidget'' namedTemplates) ts
+        divClass "p-2 btn-group"$ do 
+          let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
+          (btnEl,_) <- elAttr' "button" btnAttr $ text "Clear all"
+          let 
+            btnEv = domEvent Click btnEl
+            btnEndoEv = const (Endo $ id) <$> btnEv
+          (btnEl2,_) <- elAttr' "button" btnAttr $ text "Save all"
+          let allEv = btnEndoEv --leftmost [btnEndoEv, dropEndoEv] 
+          return $ leftmost [allEv,  leftmost x]
 
 templateListWidget' :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> Dynamic t Templates -> m(Event t (Endo Templates))
 templateListWidget' dbTemplatesDyn templatesDyn = rowWrapper $ do 
@@ -84,6 +119,7 @@ templateListWidget' dbTemplatesDyn templatesDyn = rowWrapper $ do
           let allEv = btnEndoEv --leftmost [btnEndoEv, dropEndoEv] 
           return $ leftmost [allEv,  switchDyn (leftmost . M.elems <$> x)]
         
+
 
 newTemplateForm' :: MonadWidget t m => m (Event t (Endo Templates))
 newTemplateForm' = rowWrapper $ el "form" $
@@ -207,9 +243,9 @@ showNamedTemplateWidget dbTemplates = divClass "container" $ do
   elClass "h2" "text-center mt-2" $ text "NamedTemplate Display"
   rowWrapper $ do
     templDyn <- namedTemplatesDropdown dbTemplates
-    templDyn' <- foldDynMaybe (\nVal oVal -> if nVal == oVal then Nothing else Just nVal) (V "") (updated templDyn)
+    templDyn' <- ignoreNewIfSameAsOld (V "") templDyn
     delimiter
-    dyn_ $ showTemplate <$> templDyn'
+    dyn_ $ templateWidget'' dbTemplates <$> templDyn' -- showTemplate <$> templDyn'
 
 
 rootWidgetWS :: MonadWidget t m => m ()
@@ -232,3 +268,5 @@ rootWidgetWS = do
 myWebSocket :: (MonadJSM m, MonadJSM (Performable m), HasJSContext m, PerformEvent t m, TriggerEvent t m, PostBuild t m) => T.Text -> WebSocketConfig t ByteString -> m (WebSocket t)
 myWebSocket = webSocket
 
+ignoreNewIfSameAsOld :: (Reflex t, MonadHold t m, MonadFix m, Eq a) => a -> Dynamic t a -> m (Dynamic t a)
+ignoreNewIfSameAsOld init dynVal = foldDynMaybe (\n o -> if n == o then Nothing else Just n) init (updated dynVal)
