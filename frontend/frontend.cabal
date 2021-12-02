@@ -22,6 +22,7 @@ executable frontend
   build-depends:       base,
                        containers,
                        text,
+                       lens,
                        reflex-dom,
                        file-embed,
                        aeson,

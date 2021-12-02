@@ -19,6 +19,7 @@ import Control.Monad.Fix (MonadFix)
 import Common 
 import Data.Aeson (decodeStrict)
 import Data.ByteString (ByteString)
+import qualified Control.Lens.Combinators as L
 
 import Language.Javascript.JSaddle.Types
 import Reflex.PerformEvent.Class
@@ -53,71 +54,91 @@ delimiter :: MonadWidget t m => m ()
 delimiter = rowWrapper $
                 divClass "border-top mt-3" blank
 
-templateWidget' :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> Int -> Dynamic t Template -> m (Event t (Endo Templates))
-templateWidget' namedTemplatesDyn  i dynTemplate = divClass "d-flex border-bottom" $ do
-                          divClass "p-2 flex-grow-1 my-auto" $ 
-                            dynText $ templateText <$> dynTemplate
-                          divClass "p-2 my-auto" $ display $ templateType <$> dynTemplate
-                          dropEv <- divClass "p-2 my-auto" $ showNamedTemplates namedTemplatesDyn
-                          let dropEndoEv = Endo <$> (mapTemplateWithKey i <$> (const . template <$> dropEv))
-                          divClass "p-2 btn-group"$ do 
-                            let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
-                            (btnEl,_) <- elAttr' "button" btnAttr $ text "Reset"
-                            (btnEl2,_) <- elAttr' "button" btnAttr $ text "Remove"
-                            let 
-                              btnEv = domEvent Click btnEl
-                              btnEv2 = domEvent Click btnEl2
-                              btnEndoEv = const (Endo $ mapTemplateWithKey i resetTemplate) <$> btnEv
-                              btnEndoEv2 = const (Endo $ IM.filterWithKey (\k _ -> k /= i)) <$> btnEv2
-                            return $ leftmost [btnEndoEv, btnEndoEv2, dropEndoEv] 
+--templateWidget' :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> Int -> Dynamic t Template -> m (Event t (Endo Templates))
+--templateWidget' namedTemplatesDyn  i dynTemplate = divClass "d-flex border-bottom" $ do
+--                          divClass "p-2 flex-grow-1 my-auto" $ 
+--                            dynText $ templateText <$> dynTemplate
+--                         divClass "p-2 my-auto" $ display $ templateType <$> dynTemplate
+--                          dropEv <- divClass "p-2 my-auto" $ showNamedTemplates namedTemplatesDyn
+--                          let dropEndoEv = Endo <$> (mapTemplateWithKey i <$> (const . template <$> dropEv))
+--                          divClass "p-2 btn-group"$ do 
+--                            let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
+--                            (btnEl,_) <- elAttr' "button" btnAttr $ text "Reset"
+--                            (btnEl2,_) <- elAttr' "button" btnAttr $ text "Remove"
+--                            let 
+--                              btnEv = domEvent Click btnEl
+--                              btnEv2 = domEvent Click btnEl2
+--                              btnEndoEv = const (Endo $ mapTemplateWithKey i resetTemplate) <$> btnEv
+--                              btnEndoEv2 = const (Endo $ IM.filterWithKey (\k _ -> k /= i)) <$> btnEv2
+--                            return $ leftmost [btnEndoEv, btnEndoEv2, dropEndoEv] 
 
-templateWidget'' :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> Template -> m (Event t (Endo Template))
-templateWidget'' namedTemplatesDyn (V s) = divClass "d-flex border-bottom" $ do
-                          divClass "p-2 flex-grow-1 my-auto" $ do
+templateWidget'' :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> Maybe MTemplate -> m (Event t (Endo MTemplate))
+templateWidget'' _ Nothing = return never
+templateWidget'' _ (Just (V Nothing)) = return never
+templateWidget'' namedTemplatesDyn (Just (V (Just s))) = divClass "d-flex border-bottom" $ do
+                          iDyn <- divClass "p-2 flex-grow-1 my-auto" $ do
                             --dynText $ constDyn $ "1234"
                             iEl <- inputElement $ def & initialAttributes .~ ("type" =: "text" <> "class" =: "form-control" <> "placeholder" =: (T.pack s))
                               & inputElementConfig_initialValue .~ (T.pack s)  
                               -- & inputElementConfig_setValue .~ ("" <$ btnEv)
-                            let newTemplateDyn = newTemplate <$> value iEl
-                            blank
+                            --let newTemplateDyn = newTemplate <$> value iEl
+                            let inptDyn = Endo <$> (const <$> (V . Just . T.unpack <$> _inputElement_value iEl))
+                            return inptDyn
                           divClass "p-2 my-auto" $ dynText $ constDyn $ "V"
-                          dropEv <- divClass "p-2 my-auto" $ showNamedTemplates namedTemplatesDyn
-                          let dropEndoEv = Endo <$> (const . template <$> dropEv)
+                         -- dropEv <- divClass "p-2 my-auto" $ showNamedTemplates namedTemplatesDyn
+                         -- let dropEndoEv = Endo <$> (const . template <$> dropEv)
                           divClass "p-2 btn-group"$ do 
                             let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
                             (btnEl,_) <- elAttr' "button" btnAttr $ text "Reset"
                             (btnEl2,_) <- elAttr' "button" btnAttr $ text "Remove"
+                            (btnEl3,_) <- elAttr' "button" btnAttr $ text "Add"
                             let 
                               btnEv = domEvent Click btnEl
                               btnEv2 = domEvent Click btnEl2
+                              btnEv3 = domEvent Click btnEl3
                               btnEndoEv = const (Endo $ resetTemplate) <$> btnEv
-                              btnEndoEv2 = const (Endo $ id) <$> btnEv2
-                            return $ leftmost [btnEndoEv, btnEndoEv2, dropEndoEv]
+                              btnEndoEv2 = (Endo $ const (V Nothing)) <$ btnEv2
+                              btnEndoEv3 = tagPromptlyDyn iDyn btnEv3
+                            return $ leftmost [btnEndoEv, btnEndoEv2, btnEndoEv3] --, dropEndoEv]
 
-templateWidget'' namedTemplates (L ts) = rowWrapper $ do 
-        x <- mapM (templateWidget'' namedTemplates) ts
+templateWidget'' _ (Just (L Nothing)) = return never
+templateWidget'' namedTemplates (Just (L (Just ts))) = rowWrapper $ do
+        tsEvs <- mapM ((templateWidget'' namedTemplates) . Just) ts
+        let 
+          indexedEv = leftmost $ zipWith (\ev i -> (\x -> (x, i)) <$> ev) tsEvs [0..]
+          listMapEv = (\(e, i) -> L.over (L.element i) (appEndo e)) <$> indexedEv
+          fAux :: ([MTemplate] -> [MTemplate]) -> MTemplate -> MTemplate
+          fAux f (L Nothing) = L Nothing
+          fAux f (V Nothing) = V Nothing
+          fAux f (L (Just mtemps)) = L $ Just $ f mtemps
+          fAux f (V (Just s))= (V $ Just s)
+          endoEv = Endo . fAux <$> listMapEv
         divClass "p-2 btn-group"$ do 
           let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
           (btnEl,_) <- elAttr' "button" btnAttr $ text "Clear all"
+          (btnEl2,_) <- elAttr' "button" btnAttr $ text "Add V"
+          (btnEl3,_) <- elAttr' "button" btnAttr $ text "Add L"
           let 
             btnEv = domEvent Click btnEl
-            btnEndoEv = const (Endo $ id) <$> btnEv
-          (btnEl2,_) <- elAttr' "button" btnAttr $ text "Save all"
-          let allEv = btnEndoEv --leftmost [btnEndoEv, dropEndoEv] 
-          return $ leftmost [allEv,  leftmost x]
+            btnEndoEv = (Endo $ const (L Nothing)) <$ btnEv
+            btnEv2 = domEvent Click btnEl2
+            btnEndoEv2 = (Endo $ fAux (V ( Just "") :)) <$ btnEv2
+            btnEv3 = domEvent Click btnEl3
+            btnEndoEv3 = (Endo $ fAux (L (Just []) :)) <$ btnEv3
+          return $ leftmost [endoEv, btnEndoEv, btnEndoEv2, btnEndoEv3]
 
-templateListWidget' :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> Dynamic t Templates -> m(Event t (Endo Templates))
-templateListWidget' dbTemplatesDyn templatesDyn = rowWrapper $ do 
-        x <- listWithKey (M.fromAscList . IM.toAscList <$> templatesDyn) $ templateWidget' dbTemplatesDyn
-        divClass "p-2 btn-group"$ do 
-          let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
-          (btnEl,_) <- elAttr' "button" btnAttr $ text "Clear all"
-          let 
-            btnEv = domEvent Click btnEl
-            btnEndoEv = const (Endo $ const mempty) <$> btnEv
-          (btnEl2,_) <- elAttr' "button" btnAttr $ text "Save all"
-          let allEv = btnEndoEv --leftmost [btnEndoEv, dropEndoEv] 
-          return $ leftmost [allEv,  switchDyn (leftmost . M.elems <$> x)]
+--templateListWidget' :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> Dynamic t Templates -> m(Event t (Endo Templates))
+--templateListWidget' dbTemplatesDyn templatesDyn = rowWrapper $ do 
+--        x <- listWithKey (M.fromAscList . IM.toAscList <$> templatesDyn) $ templateWidget' dbTemplatesDyn
+--        divClass "p-2 btn-group"$ do 
+--          let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
+--          (btnEl,_) <- elAttr' "button" btnAttr $ text "Clear all"
+--          let 
+--            btnEv = domEvent Click btnEl
+--            btnEndoEv = const (Endo $ const mempty) <$> btnEv
+--          (btnEl2,_) <- elAttr' "button" btnAttr $ text "Save all"
+--          let allEv = btnEndoEv --leftmost [btnEndoEv, dropEndoEv] 
+--          return $ leftmost [allEv,  switchDyn (leftmost . M.elems <$> x)]
         
 
 
@@ -133,37 +154,37 @@ newTemplateForm' = rowWrapper $ el "form" $
                   let btnEv = domEvent Click btnEl
                   return $ (\template -> Endo $ addTemplate template) <$> (tagPromptlyDyn newTemplateDyn $ btnEv)
 
-rootWidget' :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> m ()
-rootWidget' dbTemplatesDyn = divClass "container" $ do
-        elClass "h2" "text-center mt-2" $ text "Templates"
-        newTemplateEv <- newTemplateForm'
-        rec 
-          templateDyn <- foldDyn (<>) mempty $ leftmost [newTemplateEv, editsEv, totTemEv]
-          let templatesDyn = (flip appEndo) mempty <$> templateDyn --Dynamic t (IM.IntMap Template)
-          delimiter
-          editsEv <- templateListWidget' dbTemplatesDyn templatesDyn 
-          delimiter
-          totTemEv <- rowWrapper $ el "form" $
-            divClass "input-group" $ mdo
-              iEl <- inputElement $ def & initialAttributes .~ ("type" =: "text" <> "class" =: "form-control" <> "placeholder" =: "Template Name") 
-                & inputElementConfig_setValue .~ (respTextEv)
-              let 
-                namedTemplateDyn = (NamedTemplate <$> value iEl) <*> (constDyn Editable) <*> (L . IM.elems <$> templatesDyn)
-                namedTemplatesDyn = (flip (:)) [] <$> namedTemplateDyn
-                btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
-              (btnEl,_) <- divClass "input-group-append" $ elAttr' "button" btnAttr $ text "Save Template"
-              let btnEv = domEvent Click btnEl
-              let reqFunc = postJson  url 
-              respEv <- performRequestAsync $ reqFunc <$> (tag (current namedTemplatesDyn) $ btnEv)
-              let respTextEv = view . _xhrResponse_responseText <$> respEv
-              --asText <- holdDyn "No result" respTextEv
-              --dynText asText
-              (btnEl',_) <- divClass "input-group-appen" $ elAttr' "button" btnAttr $ text "Clear all"
-              let 
-                btnEv' = domEvent Click btnEl'
-                btnEndoEv = const (Endo $ const mempty) <$> btnEv'
-              return btnEndoEv 
-          delimiter
+--rootWidget' :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> m ()
+--rootWidget' dbTemplatesDyn = divClass "container" $ do
+--        elClass "h2" "text-center mt-2" $ text "Templates"
+--        newTemplateEv <- newTemplateForm'
+--        rec 
+--          templateDyn <- foldDyn (<>) mempty $ leftmost [newTemplateEv, editsEv, totTemEv]
+--          let templatesDyn = (flip appEndo) mempty <$> templateDyn --Dynamic t (IM.IntMap Template)
+--          delimiter
+--          editsEv <- templateListWidget' dbTemplatesDyn templatesDyn 
+--          delimiter
+--          totTemEv <- rowWrapper $ el "form" $
+--            divClass "input-group" $ mdo
+--              iEl <- inputElement $ def & initialAttributes .~ ("type" =: "text" <> "class" =: "form-control" <> "placeholder" =: "Template Name") 
+--                & inputElementConfig_setValue .~ (respTextEv)
+--              let 
+--                namedTemplateDyn = (NamedTemplate <$> value iEl) <*> (constDyn Editable) <*> (L . IM.elems <$> templatesDyn)
+--                namedTemplatesDyn = (flip (:)) [] <$> namedTemplateDyn
+--                btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
+--              (btnEl,_) <- divClass "input-group-append" $ elAttr' "button" btnAttr $ text "Save Template"
+--              let btnEv = domEvent Click btnEl
+--              let reqFunc = postJson  url 
+--              respEv <- performRequestAsync $ reqFunc <$> (tag (current namedTemplatesDyn) $ btnEv)
+--              let respTextEv = view . _xhrResponse_responseText <$> respEv
+--              --asText <- holdDyn "No result" respTextEv
+--              --dynText asText
+--              (btnEl',_) <- divClass "input-group-appen" $ elAttr' "button" btnAttr $ text "Clear all"
+--              let 
+--                btnEv' = domEvent Click btnEl'
+--                btnEndoEv = const (Endo $ const mempty) <$> btnEv'
+--              return btnEndoEv 
+--          delimiter
 --          dbTemplatesDyn <- divClass "p-2 btn-group"$ do 
 --            let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
 --            (btnEl2,_) <- elAttr' "button" btnAttr $ text "LoadDB"
@@ -173,8 +194,8 @@ rootWidget' dbTemplatesDyn = divClass "container" $ do
 --              ascListEv = map (\t -> (t, templateName t)) <$> mListEv
 --              mapEv = M.fromAscList <$> ascListEv
 --            holdDyn mempty mapEv 
-                
-        blank
+--                
+--        blank
 
 --handleRequest :: Event t a -> m Event t Text
 url = "http://localhost:8081/templates" :: T.Text
@@ -192,6 +213,18 @@ view mText = maybe "FAILED" id mText
 --handleRequest evVal = do
 --    respEv <- performRequestAsync evVal
 --    return $ view . _xhrResponse_responseText <$> respEv
+
+templatesTypesOptions = [("V", "Text"), ("L","List")] :: [(T.Text, T.Text)]
+
+templateOptionToDefTemplate :: T.Text -> Template
+templateOptionToDefTemplate "V" = V ""
+templateOptionToDefTemplate "L" = L []
+templateOptionToDefTemplate _ = undefined
+
+defaultTemplate :: MonadWidget t m => m (Event t (Endo Template))
+defaultTemplate = do 
+    d <- dropdown ("") (constDyn $ M.fromAscList templatesTypesOptions) def
+    return $ Endo <$> (const . templateOptionToDefTemplate <$> _dropdown_change d)
 
 namedTemplatesWidget :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> m (Event t NamedTemplate)
 namedTemplatesWidget ntemplatesDyn = do 
@@ -224,19 +257,16 @@ showTemplate (L ts) = do
       dyn $ (\b -> if b then foldl (>>) (return ()) (map showTemplate ts)  else return () ) <$> dV
       blank
 
-rootWidget :: MonadWidget t m => m ()
-rootWidget = do
-  dbTemplatesDyn <- divClass "p-2 btn-group"$ do 
+createButtons :: MonadWidget t m => m (Event t (Endo MTemplate))
+createButtons = do
+  divClass "p-2 btn-group"$ do 
     let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
-    (btnEl2,_) <- elAttr' "button" btnAttr $ text "LoadDB"
-    mEv <- getAndDecode (const url <$> domEvent Click btnEl2)
+    (btnElV,_) <- elAttr' "button" btnAttr $ text "Add V"
+    (btnElL,_) <- elAttr' "button" btnAttr $ text "Add L"
     let 
-      mListEv = (maybe [] id) <$> mEv
-      ascListEv = map (\t -> (t, templateName t)) <$> mListEv
-      mapEv = M.fromAscList <$> ascListEv
-    holdDyn mempty mapEv 
-  tabDisplay "list-group list-group-horizontal-md" "list-group-item" $
-    M.fromAscList [("tab1", ("creation", rootWidget' dbTemplatesDyn)), ("tab2", ("display", showNamedTemplateWidget dbTemplatesDyn))]
+      newV = Endo <$> (const (V (Just "")) <$ domEvent Click btnElV)
+      newL = Endo <$> (const (L (Just [])) <$ domEvent Click btnElL)
+    return $ leftmost [newV, newL]
 
 showNamedTemplateWidget :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> m ()
 showNamedTemplateWidget dbTemplates = divClass "container" $ do
@@ -245,7 +275,7 @@ showNamedTemplateWidget dbTemplates = divClass "container" $ do
     templDyn <- namedTemplatesDropdown dbTemplates
     templDyn' <- ignoreNewIfSameAsOld (V "") templDyn
     delimiter
-    dyn_ $ templateWidget'' dbTemplates <$> templDyn' -- showTemplate <$> templDyn'
+    dyn_ $ templateWidget'' dbTemplates <$> (Just . toMTemplate <$> templDyn') -- showTemplate <$> templDyn'
 
 
 rootWidgetWS :: MonadWidget t m => m ()
@@ -263,10 +293,50 @@ rootWidgetWS = do
 --  dynText respText
   dbTemplatesDyn <- holdDyn M.empty mapEv
   tabDisplay "list-group list-group-horizontal-md" "list-group-item" $
-    M.fromAscList [("tab1", ("creation", rootWidget' dbTemplatesDyn)), ("tab2", ("display", showNamedTemplateWidget dbTemplatesDyn))]
+    M.fromAscList [("tab1", ("creation", rootWidget dbTemplatesDyn)), ("tab2", ("display", showNamedTemplateWidget dbTemplatesDyn))]
 
 myWebSocket :: (MonadJSM m, MonadJSM (Performable m), HasJSContext m, PerformEvent t m, TriggerEvent t m, PostBuild t m) => T.Text -> WebSocketConfig t ByteString -> m (WebSocket t)
 myWebSocket = webSocket
 
 ignoreNewIfSameAsOld :: (Reflex t, MonadHold t m, MonadFix m, Eq a) => a -> Dynamic t a -> m (Dynamic t a)
 ignoreNewIfSameAsOld init dynVal = foldDynMaybe (\n o -> if n == o then Nothing else Just n) init (updated dynVal)
+
+
+rootWidget :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> m ()
+rootWidget dbTemplatesDyn = divClass "container" $ do
+        elClass "h2" "text-center mt-2" $ text "Templates"
+        newTemplateEv <- createButtons 
+        rec 
+          templateDyn <- foldDyn (<>) mempty $ leftmost [newTemplateEv, editsEv, totTemEv]
+          let templateDyn' = (flip appEndo) (V Nothing) <$> templateDyn 
+          delimiter
+          editsEv' <- dyn $ templateWidget'' dbTemplatesDyn <$> (Just <$> templateDyn') 
+          editsEv <- switchHold never editsEv'
+          delimiter
+          totTemEv <- rowWrapper $ el "form" $
+            divClass "input-group" $ mdo
+              iEl <- inputElement $ def & initialAttributes .~ ("type" =: "text" <> "class" =: "form-control" <> "placeholder" =: "Template Name") 
+                & inputElementConfig_setValue .~ (respTextEv)
+              let 
+                templDynMaybe = toITemplate <$> templateDyn'
+                namedPreTemplateDyn = (NamedTemplate <$> value iEl) <*> (constDyn Editable) 
+                namedTemplateMaybe = ((\f -> fmap f) <$> namedPreTemplateDyn) <*> templDynMaybe
+                filterOut :: Maybe NamedTemplate -> [NamedTemplate] -> Maybe [NamedTemplate]
+                filterOut Nothing mTs = Nothing
+                filterOut (Just nT) mTs = Just $ nT : mTs 
+                sendEvent = attachWithMaybe filterOut (current namedTemplateMaybe) ([] <$ btnEv)
+               -- namedTemplatesDyn = (flip (:)) [] <$> namedTemplateDyn
+                btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
+              (btnEl,_) <- divClass "input-group-append" $ elAttr' "button" btnAttr $ text "Save Template"
+              let btnEv = domEvent Click btnEl
+              let reqFunc = postJson  url 
+              respEv <- performRequestAsync $ reqFunc <$> sendEvent -- (tag (current namedTemplatesDyn) $ btnEv)
+              let respTextEv = view . _xhrResponse_responseText <$> respEv
+              (btnEl',_) <- divClass "input-group-appen" $ elAttr' "button" btnAttr $ text "Clear all"
+              let 
+                btnEv' = domEvent Click btnEl'
+                btnEndoEv = (Endo $ const (V Nothing)) <$ btnEv'
+              return btnEndoEv 
+          delimiter
+        blank
+
