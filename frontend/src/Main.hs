@@ -168,7 +168,7 @@ showNamedTemplates ntemplatesDyn = el "form" $ do
       
 createButtons :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) ->  m (Event t (Endo MTemplate))
 createButtons dbTemplates = do
-  divClass "p-2 btn-group"$ do 
+  divClass "p-2 btn-group"$ mdo 
     let btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
     (btnElV,_) <- elAttr' "button" btnAttr $ text "Add V"
     (btnElL,_) <- elAttr' "button" btnAttr $ text "Add L"
@@ -176,7 +176,7 @@ createButtons dbTemplates = do
     let 
       newV = Endo <$> (const (V (Just "")) <$ domEvent Click btnElV)
       newL = Endo <$> (const (L (Just [])) <$ domEvent Click btnElL)
-    dynB <- holdDyn False $ leftmost [True <$ domEvent Click btnElQ, False <$ newV, False <$ newL]       
+    dynB <- holdDyn False $ leftmost [True <$ domEvent Click btnElQ, False <$ newV, False <$ newL, False <$ evQ]       
     let dynEv = (\b -> if b then updated <$> namedTemplatesDropdown dbTemplates else return never) <$> dynB
     evEv <- dyn dynEv
     evQ <- switchHold never evEv
