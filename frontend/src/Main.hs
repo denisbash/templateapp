@@ -117,34 +117,10 @@ templateWidget'' namedTemplates (L (Just ts)) = rowWrapper $ do
           let newQ = Endo <$> (const <$> evQ)
           return $ leftmost [endoEv, btnEndoEv, newV, newL, newQ]
 
-newTemplateForm' :: MonadWidget t m => m (Event t (Endo Templates))
-newTemplateForm' = rowWrapper $ el "form" $
-                divClass "input-group" $ mdo
-                  iEl <- inputElement $ def & initialAttributes .~ ("type" =: "text" <> "class" =: "form-control" <> "placeholder" =: "Template'") 
-                    & inputElementConfig_setValue .~ ("" <$ btnEv)
-                  let 
-                    newTemplateDyn = newTemplate <$> value iEl
-                    btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
-                  (btnEl,_) <- divClass "input-group-append" $ elAttr' "button" btnAttr $ text "Add new entry"
-                  let btnEv = domEvent Click btnEl
-                  return $ (\template -> Endo $ addTemplate template) <$> (tagPromptlyDyn newTemplateDyn $ btnEv)
-
 url = "http://localhost:8081/templates" :: T.Text
 
 view :: Maybe T.Text -> T.Text
 view mText = maybe "FAILED" id mText
-
-templatesTypesOptions = [("V", "Text"), ("L","List")] :: [(T.Text, T.Text)]
-
-templateOptionToDefTemplate :: T.Text -> Template
-templateOptionToDefTemplate "V" = V ""
-templateOptionToDefTemplate "L" = L []
-templateOptionToDefTemplate _ = undefined
-
-defaultTemplate :: MonadWidget t m => m (Event t (Endo Template))
-defaultTemplate = do 
-    d <- dropdown ("") (constDyn $ M.fromAscList templatesTypesOptions) def
-    return $ Endo <$> (const . templateOptionToDefTemplate <$> _dropdown_change d)
 
 namedTemplatesWidget :: MonadWidget t m => Dynamic t (M.Map NamedTemplate T.Text) -> m (Event t NamedTemplate)
 namedTemplatesWidget ntemplatesDyn = do 
@@ -229,7 +205,7 @@ rootWidget dbTemplatesDyn = divClass "container" $ do
           totTemEv <- rowWrapper $ el "form" $
             divClass "input-group" $ mdo
               iEl <- inputElement $ def & initialAttributes .~ ("type" =: "text" <> "class" =: "form-control" <> "placeholder" =: "Template Name") 
-                & inputElementConfig_setValue .~ (respTextEv)
+                & inputElementConfig_setValue .~ (leftmost [respTextEv, noSendEv])
               let 
                 templDynMaybe = toITemplate <$> templateDyn'
                 namedPreTemplateDyn = (NamedTemplate <$> value iEl) <*> (constDyn Editable) 
@@ -238,6 +214,7 @@ rootWidget dbTemplatesDyn = divClass "container" $ do
                 filterOut Nothing mTs = Nothing
                 filterOut (Just nT) mTs = Just $ nT : mTs 
                 sendEvent = attachWithMaybe filterOut (current namedTemplateMaybe) ([] <$ btnEv)
+                noSendEv = difference ("Template is not ready" <$ btnEv) sendEvent
                 btnAttr = "class" =: "btn btn-outline-secondary" <> "type" =: "button"
               (btnEl,_) <- divClass "input-group-append" $ elAttr' "button" btnAttr $ text "Save Template"
               let btnEv = domEvent Click btnEl
