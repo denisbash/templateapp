@@ -1,1 +1,6 @@
 dist-newstyle/
+common/dist-newstyle/
+frontend/dist-newstyle/
+backend/dist-newstyle/
+result/
+frontend/result/
